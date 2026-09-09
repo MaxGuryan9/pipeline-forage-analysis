@@ -15,3 +15,19 @@ mouse_summary <- read_excel("processed/mouse_summary.xlsx") %>%
 
 cat("Loaded forage_only (", nrow(forage_only), "rows) and mouse_summary (",
     nrow(mouse_summary), "rows) from processed/\n")
+
+# 02_load_and_index.R defines these two as part of building mouse_summary
+# from scratch; since this script bypasses that, 03/06 need them defined
+# here too.
+BEHAVIOR_VARS <- c("wheel", "pellets", "nose_pokes", "licks", "in_zone_time", "in_zone_cup_time")
+
+summarise_behaviors <- function(df, group_vars) {
+  df %>%
+    group_by(across(all_of(group_vars))) %>%
+    summarise(across(
+      all_of(BEHAVIOR_VARS),
+      list(mean = ~ mean(.x, na.rm = TRUE),
+           sem  = ~ sd(.x,   na.rm = TRUE) / sqrt(sum(!is.na(.x)))),
+      .names = "{.col}_{.fn}"
+    ), .groups = "drop")
+}
