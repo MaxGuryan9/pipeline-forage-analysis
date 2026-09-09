@@ -1,0 +1,20 @@
+# Raw and processed lab data - not published here, see README
+data/**
+!data/**/
+!data/**/.gitkeep
+
+processed/**
+!processed/.gitkeep
+
+# R session / project cruft
+.Rhistory
+.Rdata
+.Rproj.user/
+
+# Excel/plot outputs the pipeline generates
+*.xlsx
+*.pdf
+
+# OS / editor cruft
+.DS_Store
+.claude/
