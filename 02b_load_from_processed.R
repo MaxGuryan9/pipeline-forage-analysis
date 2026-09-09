@@ -3,7 +3,9 @@
 ## directly from pre-computed summary files in processed/, instead of
 ## rebuilding them from raw arena CSVs in data/.
 ##
-## Run 00_config.R first (needed for library(readxl) and EFFORT_LEVELS).
+## Run 00_config.R and 01_helpers.R first - 01_helpers.R isn't used by this
+## script directly, but 03/05/06 downstream need functions defined there
+## (e.g. paired_pairwise_t()).
 ## Use this INSTEAD OF 02_load_and_index.R, not in addition to it.
 ## ══════════════════════════════════════════════════════════════════════════
 
