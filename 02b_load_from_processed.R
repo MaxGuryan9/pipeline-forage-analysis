@@ -7,6 +7,15 @@
 ## script directly, but 03/05/06 downstream need functions defined there
 ## (e.g. paired_pairwise_t()).
 ## Use this INSTEAD OF 02_load_and_index.R, not in addition to it.
+##
+## LIMITATION: forage_only/mouse_summary only have daily-level totals, not
+## raw per-timestamp data. Anything downstream that needs file_index or the
+## raw arena CSVs directly - the peak-running-rate and wheel->cup latency
+## sections of 06_efficiency_demand_analysis.R, and all of
+## 04_training_summary.R (which needs daily_all, not built here) - will
+## still fail when loading this way. Once real raw arena CSVs are available
+## under data/, switch back to running 02_load_and_index.R instead of this
+## script, and stop skipping those sections.
 ## ══════════════════════════════════════════════════════════════════════════
 
 forage_only <- read_excel("processed/forage_only.xlsx") %>%

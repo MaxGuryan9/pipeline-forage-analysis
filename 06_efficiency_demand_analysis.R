@@ -121,6 +121,14 @@ print(p_wheel_per_pellet)
 # ══════════════════════════════════════════════════════════════════════════
 # Max number of wheel turns completed in a one-minute bin.
 # This part may take a few minutes to run.
+#
+# NEEDS RAW DATA: this and the wheel->cup latency section below read
+# file_index and the raw arena CSVs directly - they can't be computed from
+# the daily-level forage_only/mouse_summary tables. If you loaded data via
+# 02b_load_from_processed.R instead of 02_load_and_index.R, this will error
+# with "object 'file_index' not found." Don't skip this section once real
+# raw arena CSVs are available under data/ - switch back to running
+# 02_load_and_index.R first.
 # ══════════════════════════════════════════════════════════════════════════
 # read_arena() already computes `bin = floor(trial_time / BIN_SIZE_SEC)`
 # (60-sec bins, same as the actograms), so this reuses that column.
