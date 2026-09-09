@@ -133,6 +133,15 @@ print(p_wheel_per_pellet)
 # read_arena() already computes `bin = floor(trial_time / BIN_SIZE_SEC)`
 # (60-sec bins, same as the actograms), so this reuses that column.
 
+if (!exists("file_index")) {
+
+  message("file_index not found - skipping peak running rate and wheel->cup ",
+          "latency (both need raw arena CSVs via 02_load_and_index.R, not ",
+          "02b_load_from_processed.R). Re-run this script after loading real ",
+          "raw data to get these sections.")
+
+} else {
+
 max_bin_all <- pmap_dfr(file_index, function(path, folder, arena, type, light, effort, diet,
                                              day_num, has_explicit_day, baseline_phase, mouse_id,
                                              animal_id, ...) {
@@ -268,6 +277,8 @@ p_latency_mouse <- latency_mouse_summary %>%
   )
 
 print(p_latency_mouse)
+
+} # end if (exists("file_index"))
 
 # ══════════════════════════════════════════════════════════════════════════
 # Baseline drift across repeat days.
