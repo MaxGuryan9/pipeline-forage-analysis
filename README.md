@@ -13,6 +13,7 @@ Scripts are numbered in run order. `00`–`02` build the shared tables everythin
 | [`00_config.R`](00_config.R) | Loads packages, sets `BASE_DIR`, defines zeitgeber-time offset rules, and builds the shared color palette (light condition × effort level). Run first. |
 | [`01_helpers.R`](01_helpers.R) | Reusable functions: folder-name parsing, CSV reading, zone-occupancy bout extraction, wheel→cup latency, and paired repeated-measures t-tests. |
 | [`02_load_and_index.R`](02_load_and_index.R) | Indexes every arena CSV under `BASE_DIR`, parses its condition metadata, and builds the per-file, per-day, and per-mouse summary tables (`daily_all`, `forage_only`, `mouse_summary`) that later scripts read. |
+| [`02b_load_from_processed.R`](02b_load_from_processed.R) | Alternative to `02_load_and_index.R` — loads `forage_only` and `mouse_summary` directly from pre-computed summary files in `processed/`, instead of rebuilding them from raw arena CSVs. Use one or the other, not both. |
 | [`03_effort_demand_plots.R`](03_effort_demand_plots.R) | Per-behavior trend plots and a day-resolved demand curve (reward intake vs. effort) comparing light conditions on a representative baseline day. |
 | [`04_training_summary.R`](04_training_summary.R) | Training-day performance across days, once training recordings exist. |
 | [`05_bar_plots_by_condition.R`](05_bar_plots_by_condition.R) | Repeated-measures comparisons — linear mixed models (`lmer`) with a per-animal random intercept, plus paired, Holm-adjusted t-tests — for every behavior × condition combination. |
