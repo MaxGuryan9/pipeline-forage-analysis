@@ -5,5 +5,6 @@
   checklist and raise any decision the real file contradicts.
 - Hard rule: the store must never contain duplicate rows. Duplicates invalidate the experiment.
   Any change to `02a_ingest_new_data.R` or the store helpers in `01_helpers.R` must keep ingest
-  idempotent, and must be tested by ingesting the same files twice and checking `check_store()`.
+  idempotent. Verify with `Rscript Experiment_v2/tests/test_ingest.R` (fake data, temp copy) and
+  add a test for any new path.
 - Data under `data/` is git-ignored; never commit it.
