@@ -40,6 +40,19 @@ Scripts are numbered in run order. `00`–`02` build the shared tables everythin
 
 Folder names encode the condition (light schedule, effort level, diet, and optionally an explicit day number); the pipeline parses this automatically in `01_helpers.R`. The `data/` and `processed/` folders in this repo keep that structure as empty placeholders — the actual recordings and derived tables aren't published here, since this is unpublished lab data.
 
+## Experiment_v2: daily ingest into Parquet
+
+`Experiment_v2/` loads each day's recordings into a growing Parquet store (queried with DuckDB) instead of re-reading every CSV on every run. Design decisions, and which ones are provisional until the first real EthoVision export, are in [`Experiment_v2/DATA_DECISIONS.md`](Experiment_v2/DATA_DECISIONS.md).
+
+Daily workflow (run R from the repo root or from `Experiment_v2/`):
+
+1. Put the day's CSVs in `Experiment_v2/data/incoming/<condition> day N/`, e.g. `low_effort_no_light_sucrose day 2/`.
+2. Source `00_config.R`, `01_helpers.R`, then `02a_ingest_new_data.R`. The first run for a folder writes a `chow.csv` there and stops.
+3. Fill in `standard_chow_start` / `standard_chow_end` (grams) in `chow.csv` and run `02a` again. The files are added to `data/store/` and moved to `data/raw/`.
+4. Source `02_load_from_store.R`, then whichever of `03`–`07` you need.
+
+Ingest is safe to re-run: files already loaded are skipped, a different file for an already-loaded mouse-day stops with an error (unless listed in `REPLACE_FILES` in `00_config.R`), and nothing is written unless every check passes. `02c_rebuild_store.R` recomputes the store from `data/raw/`. `Rscript Experiment_v2/tests/test_ingest.R` runs the idempotency tests on fake data.
+
 ## Methods notes
 
 - **Repeated-measures statistics.** The same animals are recorded across multiple conditions, so comparisons use a linear mixed model with a per-animal random intercept (not a one-way ANOVA) and paired, Holm-adjusted t-tests (not independent-samples tests).
