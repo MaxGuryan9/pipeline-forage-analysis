@@ -6,6 +6,11 @@ data/**
 processed/**
 !processed/.gitkeep
 
+# Experiment_v2 data store (incoming CSVs, raw archive, Parquet store)
+Experiment_v2/data/**
+!Experiment_v2/data/**/
+!Experiment_v2/data/**/.gitkeep
+
 # R session / project cruft
 .Rhistory
 .Rdata
