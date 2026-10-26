@@ -593,9 +593,11 @@ store_query <- function(sql) {
   as_tibble(dbGetQuery(con, sql))
 }
 
-# Whole table, or an empty tibble if nothing has been ingested yet.
+# Whole table, or an empty one (key columns only) if nothing has been ingested yet.
 read_store <- function(name) {
-  if (!file.exists(STORE_FILES[[name]])) return(tibble())
+  if (!file.exists(STORE_FILES[[name]])) {
+    return(as_tibble(map(set_names(c(STORE_KEYS[[name]], "source_hash") %>% unique()), ~ character())))
+  }
   store_query(paste0("SELECT * FROM {", name, "}"))
 }
 
@@ -696,31 +698,59 @@ check_store <- function(verbose = FALSE) {
 # ══════════════════════════════════════════════════════════════════════════
 
 # Moves a folder's files into dest_root/<folder>/. A file already there with
-# identical contents is just removed from the source; a different one stops.
-archive_folder <- function(folder_path, dest_root) {
+# identical contents is just removed from the source. A different one stops,
+# unless its name is in `replaced`: then the old copy is kept as
+# <name>.replaced_<time> (no .csv ending, so a rebuild ignores it). For
+# chow.csv the archived copy becomes old rows + the new rows, so raw/ always
+# holds a complete chow.csv for 02c_rebuild_store.R.
+archive_folder <- function(folder_path, dest_root, replaced = character()) {
   dest <- file.path(dest_root, basename(folder_path))
   files <- list.files(folder_path, recursive = TRUE, full.names = TRUE)
+  stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   for (f in files) {
     target <- file.path(dest, str_remove(f, fixed(paste0(folder_path, "/"))))
     dir.create(dirname(target), recursive = TRUE, showWarnings = FALSE)
     if (file.exists(target)) {
-      if (unname(tools::md5sum(f)) != unname(tools::md5sum(target))) {
+      if (unname(tools::md5sum(f)) == unname(tools::md5sum(target))) {
+        unlink(f)
+        next
+      }
+      if (!basename(f) %in% replaced) {
         stop("Can't archive ", f, ": a different file already exists at ", target, call. = FALSE)
       }
-      unlink(f)
-    } else {
-      file.rename(f, target)
+      old_copy <- paste0(target, ".replaced_", stamp)
+      file.rename(target, old_copy)
+      if (basename(f) == CHOW_FILE) {
+        read_chr <- function(p) read_csv(p, col_types = cols(.default = col_character()), show_col_types = FALSE)
+        new_rows <- read_chr(f)
+        bind_rows(new_rows, filter(read_chr(old_copy), !mouse_day_id %in% new_rows$mouse_day_id)) %>%
+          arrange(mouse_day_id) %>%
+          write_csv(target, na = "")
+        unlink(f)
+        next
+      }
     }
+    file.rename(f, target)
   }
   unlink(folder_path, recursive = TRUE)
 }
 
-# Files in archive targets that already exist with different contents.
-archive_conflicts <- function(folder_paths, dest_root) {
+# Already-loaded files: delete the incoming copy if identical bytes are already
+# archived under any name (so raw/ never holds two copies of one recording);
+# otherwise they are archived normally.
+discard_already_archived <- function(files, dest_root) {
+  if (length(files) == 0) return(invisible())
+  archived <- unname(tools::md5sum(get_csvs(dest_root)))
+  unlink(files[unname(tools::md5sum(files)) %in% archived])
+}
+
+# Files in archive targets that already exist with different contents
+# (ignoring names in `replaced`).
+archive_conflicts <- function(folder_paths, dest_root, replaced = character()) {
   unlist(map(folder_paths, function(fp) {
     files <- list.files(fp, recursive = TRUE, full.names = TRUE)
     targets <- file.path(dest_root, basename(fp), str_remove(files, fixed(paste0(fp, "/"))))
-    clash <- file.exists(targets)
+    clash <- file.exists(targets) & !basename(files) %in% replaced
     clash[clash] <- unname(tools::md5sum(files[clash])) != unname(tools::md5sum(targets[clash]))
     targets[clash]
   }))
@@ -759,7 +789,10 @@ ingest <- function(src_dir = INCOMING_DIR, archive = TRUE, replace_files = REPLA
   cat(nrow(idx), "CSV file(s) found:", nrow(new), "new,", nrow(skipped), "already loaded (skipped)\n")
 
   if (nrow(new) == 0) {
-    if (archive) walk(unique(skipped$folder_path), archive_folder, dest_root = RAW_DIR)
+    if (archive) {
+      discard_already_archived(skipped$path, RAW_DIR)
+      walk(unique(skipped$folder_path), archive_folder, dest_root = RAW_DIR)
+    }
     cat("Nothing new to add.\n")
     return(invisible(NULL))
   }
@@ -835,8 +868,10 @@ ingest <- function(src_dir = INCOMING_DIR, archive = TRUE, replace_files = REPLA
   if (length(chow_problems) > 0) stop_with("Problems in chow.csv:", chow_problems)
   daily_new <- daily_new %>% left_join(bind_rows(map(chow, "chow")), by = "mouse_day_id")
 
+  # replaced files, and the chow.csv of their folder, may overwrite archived copies
+  replaced <- if (nrow(conflicts) > 0) c(unique(conflicts$source_file), CHOW_FILE) else character()
   if (archive) {
-    clash <- archive_conflicts(unique(idx$folder_path), RAW_DIR)
+    clash <- archive_conflicts(unique(idx$folder_path), RAW_DIR, replaced)
     if (length(clash) > 0) stop_with("A different file with the same name is already archived:", clash)
   }
 
@@ -871,7 +906,10 @@ ingest <- function(src_dir = INCOMING_DIR, archive = TRUE, replace_files = REPLA
   for (nm in c("daily", "latency", "log")) if (written[[nm]]) swap_in(nm)
   check_store()
 
-  if (archive) walk(unique(idx$folder_path), archive_folder, dest_root = RAW_DIR)
+  if (archive) {
+    discard_already_archived(skipped$path, RAW_DIR)
+    walk(unique(idx$folder_path), archive_folder, dest_root = RAW_DIR, replaced = replaced)
+  }
 
   cat("\nAdded", nrow(daily_new), "mouse-day(s) and", nrow(latency_new), "latency event(s) from",
       nrow(new), "file(s).\n")
