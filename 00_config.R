@@ -122,6 +122,9 @@ COLUMN_MAP <- c(
 
 EFFORT_LEVELS <- c("low", "medium", "high")
 
+# The core behavioral measures every summary table and plot is built from.
+BEHAVIOR_VARS <- c("wheel", "pellets", "nose_pokes", "licks", "in_zone_time", "in_zone_cup_time")
+
 COND_COLOURS <- c(
   low    = "#2CBBAB",
   medium = "#ED1A61",
