@@ -160,21 +160,33 @@ if (!HAS_FORAGE_DATA) {
   # Target: light x effort
   # Diet is NOT part of the classification target.... yet
 
+  # Input: build_rf_features() - one row per mouse x day with the daily
+  # behaviours, chow eaten and per-day latency stats (see RF_FEATURES).
+  rf_source <- build_rf_features() %>%
+    filter(type == "forage", !is.na(light_group), !is.na(effort),
+           is.null(FORAGE_DAYS_TO_USE) | day_num %in% FORAGE_DAYS_TO_USE) %>%
+    mutate(condition_label = paste(light_group, str_to_title(effort), sep = " – "))
+
   # Features: every RF_FEATURES variable that has data in every condition.
   # (e.g. a variable that wasn't recorded in one condition can't be compared.)
   rf_features <- RF_FEATURES[map_lgl(RF_FEATURES, function(f)
-    all(tapply(is.finite(behavior3d_data[[f]]), behavior3d_data$condition_label, any)))]
+    all(tapply(is.finite(rf_source[[f]]), rf_source$condition_label, any)))]
   if (length(setdiff(RF_FEATURES, rf_features)) > 0) {
     message("Random forest: dropping features with no data in some condition: ",
             paste(setdiff(RF_FEATURES, rf_features), collapse = ", "))
   }
   rf_formula <- reformulate(rf_features, response = "condition_full")
 
-  rf_data <- behavior3d_data %>%
+  n_before <- nrow(rf_source)
+  rf_data <- rf_source %>%
     mutate(condition_full = factor(condition_label)) %>%
     select(mouse_id, animal_id, condition_full, diet, all_of(rf_features)) %>%
     # Only remove rows with invalid values in the features being used.
     filter(if_all(all_of(rf_features), is.finite))
+  if (nrow(rf_data) < n_before) {
+    message("Random forest: dropped ", n_before - nrow(rf_data), " of ", n_before,
+            " mouse-days with a missing feature value (e.g. no latency events that day).")
+  }
 
   if (n_distinct(rf_data$condition_full) < 2) {
     message("07: fewer than 2 light x effort conditions with data - skipping random forest.")
