@@ -18,3 +18,4 @@ processed/**
 # OS / editor cruft
 .DS_Store
 .claude/
+.vscode/
