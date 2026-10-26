@@ -13,53 +13,68 @@ library(ggpubr)
 library(lme4)
 library(lmerTest)
 library(colorspace)
+library(duckdb)
 
 # ══════════════════════════════════════════════════════════════════════════
 # CONFIG
 # ══════════════════════════════════════════════════════════════════════════
 
-# Parent folder that CONTAINS the data folders (Baseline, training, ...).
-BASE_DIR <- "C:/Users/irs3th/Desktop/forage left corner"
+# ── Data folders ──────────────────────────────────────────────────────────
+# Everything lives in Experiment_v2/data/ (git-ignored), so the paths are the
+# same for anyone with the repo. Works whether R runs from the repo root or
+# from Experiment_v2/. See DATA_DECISIONS.md for the design.
+#   incoming/  drop each day's EthoVision CSVs here, in a condition folder
+#   raw/       ingest moves loaded CSVs (and chow.csv) here
+#   store/     the Parquet files: daily_summary, latency_events, ingest_log
+# (DATA_DECISIONS.md only exists in Experiment_v2/; the repo root has its own 00_config.R)
+EXP_DIR <- if (file.exists("DATA_DECISIONS.md")) "." else "Experiment_v2"
+if (!file.exists(file.path(EXP_DIR, "DATA_DECISIONS.md"))) {
+  stop("Run R from the repo root or from Experiment_v2/ (current: ", getwd(), ")")
+}
+DATA_DIR     <- file.path(EXP_DIR, "data")
+INCOMING_DIR <- file.path(DATA_DIR, "incoming")
+RAW_DIR      <- file.path(DATA_DIR, "raw")
+STORE_DIR    <- file.path(DATA_DIR, "store")
+STORE_FILES  <- c(
+  daily   = file.path(STORE_DIR, "daily_summary.parquet"),
+  latency = file.path(STORE_DIR, "latency_events.parquet"),
+  log     = file.path(STORE_DIR, "ingest_log.parquet")
+)
 
-# Every subfolder of BASE_DIR whose name matches FOLDER_REGEX is one "session
-# batch". Three families of folder names are recognised:
+# ── Incoming folder names ─────────────────────────────────────────────────
+# Each folder in incoming/ is one day for one condition. Three families of
+# folder names are recognised, and each MUST end in "day N":
 #
-#   BASELINE : "Baseline"                       (2 days)
-#   TRAINING : "training"                       (several trial days)
-#   FORAGE   : "<effort>_effort_<light>_light_<diet>"
-#              e.g. "low_effort_no_light_sucrose", "medium_effort_white_light_sucrose",
-#                   "high_effort_yellow_light_sucrose"
-#              (underscores or spaces both work; a trailing number = repeat,
-#               a trailing "day N" = which day that folder holds)
+#   BASELINE : "Baseline day 1"
+#   TRAINING : "training day 3"
+#   FORAGE   : "<effort>_effort_<light>_light_<diet> day N"
+#              e.g. "low_effort_no_light_sucrose day 2",
+#                   "high_effort_yellow_light_sucrose day 1"
+#              (underscores or spaces both work; a number right before
+#               "day N" = repeat, e.g. "low_effort_no_light_sucrose 2 day 1")
 #
-# Folders that don't match (e.g. old LD/LL pilot folders) are ignored, and
-# folders that don't exist yet are simply absent.
+# Ingest stops if a folder name doesn't match.
 FOLDER_REGEX <- "^(baseline|training|(low|medium|high)[ _]+effort)"
 
-ALL_DIRS    <- list.dirs(BASE_DIR, recursive = FALSE)
-.is_data    <- str_detect(basename(ALL_DIRS), regex(FOLDER_REGEX, ignore_case = TRUE))
-CONDITION_FOLDERS <- ALL_DIRS[.is_data]
-if (any(!.is_data)) {
-  message("Ignoring folders that don't look like Baseline / training / <effort>_effort_...: ",
-          paste(basename(ALL_DIRS[!.is_data]), collapse = ", "))
-}
-
 # ── Day numbering ─────────────────────────────────────────────────────────
-# Day number comes from (in order of priority):
-#   1. "day N" / "dN" in the file name or a subfolder name (e.g. training/Day 2/...)
-#   2. "day N" at the end of the condition folder name
-#   3. otherwise: files are numbered 1, 2, ... in alphabetical order when an
-#      arena has several files in one folder; a single file = day 1
-# On top of that, a single long recording that spans several 24 h days is split
-# into days automatically (day_num = file day + day within the recording).
+# Day number comes from "day N" / "dN" in the file name, or else "day N" at the
+# end of the incoming folder name. A file with neither is refused: numbering
+# days automatically would let a re-export of an already-loaded day slip in as
+# a new day (see DATA_DECISIONS.md).
+# A single long recording that spans several 24 h days is split into days
+# automatically (day_num = labelled day + day within the recording).
+
+# Replacing an already-loaded mouse-day: list the new file names here, then run
+# 02a. The old rows for those mouse-days are removed and the new ones added.
+REPLACE_FILES <- c()
 
 # ── Zeitgeber time ────────────────────────────────────────────────────────
 # All recordings are assumed to start 1 hour after lights-on (ZT 1) and run ~23
 # hours, so every file is missing the same ~1 hour window: ZT 0 -> ZT 1.
 DEFAULT_ZT_OFFSET <- 1
 
-# If a particular file's recording didn't start at ZT 1, either add the exact
-# path here:   FILE_ZT_OVERRIDES <- c("C:/.../file.csv" = 1.25)
+# If a particular file's recording didn't start at ZT 1, either add its file
+# name here:   FILE_ZT_OVERRIDES <- c("Trial 12 Arena 3.csv" = 1.25)
 FILE_ZT_OVERRIDES <- c()
 
 # ...or add a rule. NA in a column = "matches anything". `light` is a regex
@@ -76,8 +91,8 @@ ZT_OFFSET_RULES <- tibble(
 get_zt_offset <- function(path, type, light, effort, diet, day_num, arena) {
 
   # 1. Check for a specific file override first
-  if (length(FILE_ZT_OVERRIDES) > 0 && path %in% names(FILE_ZT_OVERRIDES)) {
-    return(unname(FILE_ZT_OVERRIDES[path]))
+  if (length(FILE_ZT_OVERRIDES) > 0 && basename(path) %in% names(FILE_ZT_OVERRIDES)) {
+    return(unname(FILE_ZT_OVERRIDES[basename(path)]))
   }
 
   # 2. Check rule-based overrides, if any rules exist
@@ -174,9 +189,14 @@ BEHAVIOR_METRICS <- tibble(y_col = BEHAVIOR_VARS, y_label = unname(BEHAVIOR_LABE
 FORAGE_DAYS_TO_USE <- NULL
 
 # Random forest (07): features, and what gets held out in cross-validation.
+# Features are columns of build_rf_features() (one row per mouse x day):
+# the daily behaviours, peak wheel rate, chow eaten, and per-day latency
+# stats for every pair in ZONE_LATENCY_PAIRS (n, median, mean, IQR).
 #   "mouse_id"  = hold out one animal-in-one-condition (original behaviour)
 #   "animal_id" = hold out the whole physical animal across ALL conditions
-RF_FEATURES   <- BEHAVIOR_VARS
+LATENCY_FEATURES <- as.vector(outer(ZONE_LATENCY_PAIRS$pair,
+                                    c("n", "median_sec", "mean_sec", "iqr_sec"), paste, sep = "_"))
+RF_FEATURES   <- c(BEHAVIOR_VARS, "max_turns_1min", "standard_chow_eaten", LATENCY_FEATURES)
 RF_HOLDOUT_ID <- "mouse_id"
 
 # ── Conditions and colours ────────────────────────────────────────────────
